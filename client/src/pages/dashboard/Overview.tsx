@@ -131,7 +131,7 @@ export default function DashboardOverview() {
           <Card className="shadow-xs hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Native Token</CardTitle>
-              <div className="h-6 w-6 rounded-full bg-white flex items-center justify-center text-background">
+              <div className="h-6 w-6 rounded-full bg-white flex items-center justify-center text-primary dark:text-background">
                 <BytusIcon className="h-4 w-4" />
               </div>
             </CardHeader>

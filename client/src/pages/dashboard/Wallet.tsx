@@ -51,7 +51,7 @@ const initialAssets = [
     change: "+12.5%", 
     isPositive: true,
     icon: BytusIcon,
-    color: "bg-white text-background"
+    color: "bg-white text-primary dark:text-background"
   },
   { 
     name: "Bitcoin", 
