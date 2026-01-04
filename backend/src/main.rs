@@ -14,15 +14,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    // Wait for Railway private DNS to be ready
-    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await?;
+    // Retry connection for Railway private DNS
+    let mut retries = 5;
+    let pool = loop {
+        match PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_url)
+            .await
+        {
+            Ok(p) => break p,
+            Err(_) if retries > 0 => {
+                retries -= 1;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    };
 
     let app = routes::create_router(pool);
 
