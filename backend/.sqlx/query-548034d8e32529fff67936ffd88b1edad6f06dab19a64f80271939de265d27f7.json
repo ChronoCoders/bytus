@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT asset, protocol, balance, apy, usd_value\n        FROM treasury_positions\n        WHERE user_id = $1\n        ORDER BY usd_value DESC NULLS LAST\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "asset",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "protocol",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "balance",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "apy",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "usd_value",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "548034d8e32529fff67936ffd88b1edad6f06dab19a64f80271939de265d27f7"
+}

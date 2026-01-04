@@ -1,6 +1,8 @@
 use crate::handlers::auth::Claims;
-use axum::{http::StatusCode, Extension, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use serde::Serialize;
+use sqlx::PgPool;
+use uuid::Uuid;
 
 #[derive(Serialize)]
 pub struct TreasuryPosition {
@@ -18,52 +20,75 @@ pub struct TreasuryPortfolio {
 }
 
 pub async fn get_positions(
-    Extension(_claims): Extension<Claims>,
+    State(pool): State<PgPool>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<TreasuryPosition>>, StatusCode> {
-    let positions = vec![
-        TreasuryPosition {
-            name: "USDC Treasury".to_string(),
-            protocol: "Compound V3".to_string(),
-            balance: "250,000".to_string(),
-            value: 250000.00,
-            apy: "4.8%".to_string(),
-        },
-        TreasuryPosition {
-            name: "Ethereum Liquidity".to_string(),
-            protocol: "Uniswap V3".to_string(),
-            balance: "45.2 ETH".to_string(),
-            value: 125400.00,
-            apy: "12.5%".to_string(),
-        },
-    ];
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT asset, protocol, balance, apy, usd_value
+        FROM treasury_positions
+        WHERE user_id = $1
+        ORDER BY usd_value DESC NULLS LAST
+        "#,
+        user_id
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let positions: Vec<TreasuryPosition> = rows
+        .into_iter()
+        .map(|row| TreasuryPosition {
+            name: row.asset.clone(),
+            protocol: row.protocol.unwrap_or_else(|| "Unknown".to_string()),
+            balance: row.balance.to_string(),
+            value: row.usd_value.map(|v| v.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
+            apy: row.apy.map(|a| format!("{}%", a)).unwrap_or_else(|| "0.0%".to_string()),
+        })
+        .collect();
 
     Ok(Json(positions))
 }
 
 pub async fn get_portfolio(
-    Extension(_claims): Extension<Claims>,
+    State(pool): State<PgPool>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<TreasuryPortfolio>, StatusCode> {
-    let positions = vec![
-        TreasuryPosition {
-            name: "USDC Treasury".to_string(),
-            protocol: "Compound V3".to_string(),
-            balance: "250,000".to_string(),
-            value: 250000.00,
-            apy: "4.8%".to_string(),
-        },
-        TreasuryPosition {
-            name: "Ethereum Liquidity".to_string(),
-            protocol: "Uniswap V3".to_string(),
-            balance: "45.2 ETH".to_string(),
-            value: 125400.00,
-            apy: "12.5%".to_string(),
-        },
-    ];
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    let total_value: f64 = positions.iter().map(|p| p.value).sum();
+    let rows = sqlx::query!(
+        r#"
+        SELECT asset, protocol, balance, apy, usd_value
+        FROM treasury_positions
+        WHERE user_id = $1
+        ORDER BY usd_value DESC NULLS LAST
+        "#,
+        user_id
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let assets: Vec<TreasuryPosition> = rows
+        .iter()
+        .map(|row| TreasuryPosition {
+            name: row.asset.clone(),
+            protocol: row.protocol.clone().unwrap_or_else(|| "Unknown".to_string()),
+            balance: row.balance.to_string(),
+            value: row.usd_value.as_ref().map(|v| v.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0),
+            apy: row.apy.as_ref().map(|a| format!("{}%", a)).unwrap_or_else(|| "0.0%".to_string()),
+        })
+        .collect();
+
+    let total_value: f64 = rows
+        .iter()
+        .map(|row| row.usd_value.as_ref().map(|v| v.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0))
+        .sum();
 
     Ok(Json(TreasuryPortfolio {
         total_value,
-        assets: positions,
+        assets,
     }))
 }
