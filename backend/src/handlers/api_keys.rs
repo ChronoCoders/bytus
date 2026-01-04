@@ -5,6 +5,7 @@ use axum::{
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -43,7 +44,11 @@ fn generate_api_key() -> (String, String) {
         .map(|_| format!("{:x}", rand::random::<u8>()))
         .collect();
     let key = format!("sk_live_{}", random_part);
-    let hash = format!("{:x}", md5::compute(&key));
+    
+    let mut hasher = Sha256::new();
+    hasher.update(&key);
+    let hash = format!("{:x}", hasher.finalize());
+    
     (key, hash)
 }
 
@@ -148,7 +153,9 @@ pub async fn delete_key(
 }
 
 pub async fn validate_api_key(pool: &PgPool, api_key: &str) -> Result<Uuid, StatusCode> {
-    let key_hash = format!("{:x}", md5::compute(api_key));
+    let mut hasher = Sha256::new();
+    hasher.update(api_key);
+    let key_hash = format!("{:x}", hasher.finalize());
 
     let result = sqlx::query!(
         r#"
