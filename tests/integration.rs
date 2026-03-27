@@ -452,6 +452,87 @@ async fn test_settlement_balance_accuracy(pool: PgPool) -> sqlx::Result<()> {
     Ok(())
 }
 
+// ── settlement chain events ───────────────────────────────────────────────────
+
+/// Every new settlement must produce exactly one chain event of type 'settlement'.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_settlement_produces_chain_event(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, _) = signup_and_login(&app, "chain@test.com").await;
+
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        "/api/settlements",
+        Some(json!({
+            "gross_amount": 10000,
+            "currency": "USD",
+            "idempotency_key": "chain-evt-001"
+        })),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let settlement_id = body["id"].as_str().unwrap().to_string();
+
+    // Exactly one 'settlement' chain event in DB.
+    let event_count = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM chain_events WHERE event_type = 'settlement'"
+    )
+    .fetch_one(&pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(event_count, 1);
+
+    // The event payload references this settlement.
+    let payload = sqlx::query_scalar!(
+        "SELECT payload FROM chain_events WHERE event_type = 'settlement' LIMIT 1"
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        payload["settlement_id"].as_str().unwrap(),
+        settlement_id,
+        "chain event payload must reference the settlement id"
+    );
+
+    // A block was written (genesis + 1 settlement block).
+    let block_count = sqlx::query_scalar!("SELECT COUNT(*) FROM blocks")
+        .fetch_one(&pool)
+        .await?
+        .unwrap_or(0);
+    assert_eq!(block_count, 2);
+
+    // Idempotent replay does NOT produce a second chain event.
+    let (status2, body2) = send(
+        app,
+        Method::POST,
+        "/api/settlements",
+        Some(json!({
+            "gross_amount": 10000,
+            "currency": "USD",
+            "idempotency_key": "chain-evt-001"
+        })),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status2, StatusCode::OK);
+    assert_eq!(body2["id"], body["id"], "idempotent replay must return same settlement id");
+
+    let event_count_after = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM chain_events WHERE event_type = 'settlement'"
+    )
+    .fetch_one(&pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(
+        event_count_after, 1,
+        "idempotent replay must not produce a second chain event"
+    );
+
+    Ok(())
+}
+
 // ── BYTS lock / unlock ────────────────────────────────────────────────────────
 
 /// Lock happy path: balance deducted, lock active, chain event written.

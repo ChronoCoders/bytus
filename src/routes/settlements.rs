@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
+use crate::chain;
 use crate::error::AppError;
 use crate::models::Settlement;
 use crate::state::AppState;
@@ -166,6 +167,18 @@ pub async fn create_settlement(
         .await
         .map_err(AppError::Database)?;
     }
+
+    // Step 6: Write chain event and block in the same transaction.
+    // Idempotent replay returns early before this point — no duplicate events.
+    // Payload keys are alphabetical to match PostgreSQL JSONB read-back order.
+    let payload = serde_json::json!({
+        "currency": body.currency,
+        "fee_amount": fee,
+        "gross_amount": gross,
+        "net_amount": net,
+        "settlement_id": settlement.id,
+    });
+    chain::append_block(&mut tx, "settlement", &payload).await?;
 
     tx.commit().await.map_err(AppError::Database)?;
 
