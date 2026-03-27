@@ -44,12 +44,10 @@ pub async fn append_block(
     event_type: &str,
     payload: &serde_json::Value,
 ) -> Result<i64, ChainError> {
-    let prev = sqlx::query!(
-        "SELECT id, hash FROM blocks ORDER BY id DESC LIMIT 1 FOR UPDATE"
-    )
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(ChainError::Database)?;
+    let prev = sqlx::query!("SELECT id, hash FROM blocks ORDER BY id DESC LIMIT 1 FOR UPDATE")
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(ChainError::Database)?;
 
     let new_hash = compute_block_hash(&prev.hash, std::slice::from_ref(payload));
 
@@ -147,7 +145,10 @@ mod tests {
         let block_id = append_block(&mut tx, "settlement", &payload).await.unwrap();
         tx.commit().await.unwrap();
 
-        assert!(block_id > 1, "new block id must be greater than genesis (1)");
+        assert!(
+            block_id > 1,
+            "new block id must be greater than genesis (1)"
+        );
         verify_block(block_id, &pool).await.unwrap();
     }
 

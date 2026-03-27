@@ -20,7 +20,11 @@ async fn main() {
         std::process::exit(1);
     });
 
-    tracing::info!(fee_bps = cfg.fee_bps, byts_rate = cfg.byts_rate, "configuration loaded");
+    tracing::info!(
+        fee_bps = cfg.fee_bps,
+        byts_rate = cfg.byts_rate,
+        "configuration loaded"
+    );
 
     let pool = db::connect(&cfg.database_url).await.unwrap_or_else(|e| {
         eprintln!("database connection error: {e}");

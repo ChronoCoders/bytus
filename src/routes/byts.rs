@@ -96,9 +96,7 @@ pub async fn lock_byts(
     Json(body): Json<LockRequest>,
 ) -> Result<Json<LockResponse>, AppError> {
     if body.amount <= 0 {
-        return Err(AppError::BadRequest(
-            "amount must be positive".to_string(),
-        ));
+        return Err(AppError::BadRequest("amount must be positive".to_string()));
     }
 
     let mut tx = state.pool.begin().await.map_err(AppError::Database)?;
@@ -253,5 +251,7 @@ pub async fn list_locks(
     .await
     .map_err(AppError::Database)?;
 
-    Ok(Json(rows.into_iter().map(LockDetailResponse::from).collect()))
+    Ok(Json(
+        rows.into_iter().map(LockDetailResponse::from).collect(),
+    ))
 }

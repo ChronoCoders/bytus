@@ -6,6 +6,7 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
+use bytus::chain;
 use bytus::routes;
 use bytus::state::AppState;
 
@@ -485,7 +486,10 @@ async fn test_settlement_byts_fee(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["fee_amount"], 50);
     assert_eq!(body["net_amount"], 9950);
-    assert_eq!(body["byts_fee"], 100, "byts_fee must equal fiat_fee * byts_rate / 1_000_000");
+    assert_eq!(
+        body["byts_fee"], 100,
+        "byts_fee must equal fiat_fee * byts_rate / 1_000_000"
+    );
 
     // Verify byts_fee is persisted in DB.
     let settlement_id = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
@@ -511,7 +515,111 @@ async fn test_settlement_byts_fee(pool: PgPool) -> sqlx::Result<()> {
         Some(&token),
     )
     .await;
-    assert_eq!(body2["byts_fee"], 100, "idempotent replay must return same byts_fee");
+    assert_eq!(
+        body2["byts_fee"], 100,
+        "idempotent replay must return same byts_fee"
+    );
+
+    Ok(())
+}
+
+// ── Phase 2 auth guards ───────────────────────────────────────────────────────
+
+/// GET /api/byts/balance requires authentication.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_byts_balance_requires_auth(pool: PgPool) {
+    let app = routes::app(make_state(pool));
+    let (status, _) = send(app, Method::GET, "/api/byts/balance", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// GET /api/byts/lock requires authentication.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_byts_lock_list_requires_auth(pool: PgPool) {
+    let app = routes::app(make_state(pool));
+    let (status, _) = send(app, Method::GET, "/api/byts/lock", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// GET /api/chain/blocks requires authentication.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_chain_blocks_requires_auth(pool: PgPool) {
+    let app = routes::app(make_state(pool));
+    let (status, _) = send(app, Method::GET, "/api/chain/blocks", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+// ── Phase 2 baseline ──────────────────────────────────────────────────────────
+
+/// GET /api/byts/balance returns { "amount": 0 } when no balance record exists.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_byts_balance_zero_for_new_user(pool: PgPool) {
+    let app = routes::app(make_state(pool));
+    let (token, _) = signup_and_login(&app, "zero@test.com").await;
+    let (status, body) = send(app, Method::GET, "/api/byts/balance", None, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["amount"], 0);
+}
+
+// ── deployment-validator smoke test 15 ───────────────────────────────────────
+
+/// verify_block passes for every block after a full settlement + lock + unlock cycle.
+///
+/// This is the chain integrity check from the deployment-validator:
+/// "Run verify_block() on all blocks → All blocks return Ok(())"
+#[sqlx::test(migrations = "./migrations")]
+async fn test_chain_verify_all_blocks(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, user_id) = signup_and_login(&app, "integrity@test.com").await;
+    seed_byts(&pool, user_id, 10_000).await;
+
+    // Block 2 — settlement chain event.
+    send(
+        app.clone(),
+        Method::POST,
+        "/api/settlements",
+        Some(json!({ "gross_amount": 20000, "idempotency_key": "integrity-001" })),
+        Some(&token),
+    )
+    .await;
+
+    // Block 3 — lock chain event.
+    let (_, lock_body) = send(
+        app.clone(),
+        Method::POST,
+        "/api/byts/lock",
+        Some(json!({ "amount": 3000 })),
+        Some(&token),
+    )
+    .await;
+    let lock_id = lock_body["lock_id"].as_str().unwrap().to_string();
+
+    // Block 4 — unlock chain event.
+    send(
+        app,
+        Method::POST,
+        "/api/byts/unlock",
+        Some(json!({ "lock_id": lock_id })),
+        Some(&token),
+    )
+    .await;
+
+    // Genesis + 3 operation blocks = 4 total.
+    let block_ids: Vec<i64> = sqlx::query_scalar!("SELECT id FROM blocks ORDER BY id")
+        .fetch_all(&pool)
+        .await?;
+    assert_eq!(
+        block_ids.len(),
+        4,
+        "expected genesis + settlement + lock + unlock blocks"
+    );
+
+    // Every block must pass hash verification.
+    for block_id in block_ids {
+        chain::verify_block(block_id, &pool)
+            .await
+            .unwrap_or_else(|e| panic!("block {block_id} failed verify_block: {e}"));
+    }
 
     Ok(())
 }
@@ -538,7 +646,10 @@ async fn test_chain_list_blocks(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(status, StatusCode::OK);
 
     let blocks = body.as_array().unwrap();
-    assert!(blocks.len() >= 2, "expected genesis block + at least 1 settlement block");
+    assert!(
+        blocks.len() >= 2,
+        "expected genesis block + at least 1 settlement block"
+    );
 
     // Most recent block first — it's the settlement block.
     let settlement_block = &blocks[0];
@@ -643,12 +754,11 @@ async fn test_settlement_produces_chain_event(pool: PgPool) -> sqlx::Result<()> 
     let settlement_id = body["id"].as_str().unwrap().to_string();
 
     // Exactly one 'settlement' chain event in DB.
-    let event_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM chain_events WHERE event_type = 'settlement'"
-    )
-    .fetch_one(&pool)
-    .await?
-    .unwrap_or(0);
+    let event_count =
+        sqlx::query_scalar!("SELECT COUNT(*) FROM chain_events WHERE event_type = 'settlement'")
+            .fetch_one(&pool)
+            .await?
+            .unwrap_or(0);
     assert_eq!(event_count, 1);
 
     // The event payload references this settlement.
@@ -684,14 +794,16 @@ async fn test_settlement_produces_chain_event(pool: PgPool) -> sqlx::Result<()> 
     )
     .await;
     assert_eq!(status2, StatusCode::OK);
-    assert_eq!(body2["id"], body["id"], "idempotent replay must return same settlement id");
+    assert_eq!(
+        body2["id"], body["id"],
+        "idempotent replay must return same settlement id"
+    );
 
-    let event_count_after = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM chain_events WHERE event_type = 'settlement'"
-    )
-    .fetch_one(&pool)
-    .await?
-    .unwrap_or(0);
+    let event_count_after =
+        sqlx::query_scalar!("SELECT COUNT(*) FROM chain_events WHERE event_type = 'settlement'")
+            .fetch_one(&pool)
+            .await?
+            .unwrap_or(0);
     assert_eq!(
         event_count_after, 1,
         "idempotent replay must not produce a second chain event"
@@ -745,16 +857,22 @@ async fn test_byts_lock_happy_path(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(lock_status, "active");
 
     // Chain event was written.
-    let event_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM chain_events WHERE event_type = 'lock'"
-    )
-    .fetch_one(&pool)
-    .await?
-    .unwrap_or(0);
+    let event_count =
+        sqlx::query_scalar!("SELECT COUNT(*) FROM chain_events WHERE event_type = 'lock'")
+            .fetch_one(&pool)
+            .await?
+            .unwrap_or(0);
     assert_eq!(event_count, 1);
 
     // GET /api/byts/lock lists the lock.
-    let (status, list) = send(app.clone(), Method::GET, "/api/byts/lock", None, Some(&token)).await;
+    let (status, list) = send(
+        app.clone(),
+        Method::GET,
+        "/api/byts/lock",
+        None,
+        Some(&token),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     let locks = list.as_array().unwrap();
     assert_eq!(locks.len(), 1);
@@ -819,12 +937,11 @@ async fn test_byts_unlock(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(lock_status, "released");
 
     // Unlock chain event was written.
-    let event_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM chain_events WHERE event_type = 'unlock'"
-    )
-    .fetch_one(&pool)
-    .await?
-    .unwrap_or(0);
+    let event_count =
+        sqlx::query_scalar!("SELECT COUNT(*) FROM chain_events WHERE event_type = 'unlock'")
+            .fetch_one(&pool)
+            .await?
+            .unwrap_or(0);
     assert_eq!(event_count, 1);
 
     // Cannot unlock the same lock again — 422.
