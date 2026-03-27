@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod byts;
+pub mod chain;
 pub mod me;
 pub mod settlements;
 
@@ -27,6 +28,8 @@ pub fn app(state: AppState) -> Router {
             "/api/settlements",
             get(settlements::list_settlements).post(settlements::create_settlement),
         )
+        .route("/api/chain/blocks", get(chain::list_blocks))
+        .route("/api/chain/blocks/:id", get(chain::get_block))
         .with_state(state)
 }
 

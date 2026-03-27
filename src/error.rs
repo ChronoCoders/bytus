@@ -27,6 +27,9 @@ pub enum AppError {
     #[error("unprocessable entity: {0}")]
     UnprocessableEntity(String),
 
+    #[error("not found")]
+    NotFound,
+
     #[error("internal server error")]
     Internal,
 }
@@ -48,6 +51,7 @@ impl IntoResponse for AppError {
             AppError::UnprocessableEntity(msg) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, msg.clone())
             }
+            AppError::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
             AppError::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal server error".to_string(),

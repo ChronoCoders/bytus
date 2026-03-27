@@ -454,6 +454,111 @@ async fn test_settlement_balance_accuracy(pool: PgPool) -> sqlx::Result<()> {
 
 // ── settlement chain events ───────────────────────────────────────────────────
 
+// ── chain API ─────────────────────────────────────────────────────────────────
+
+/// GET /api/chain/blocks returns list including genesis and settlement blocks.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_chain_list_blocks(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, _) = signup_and_login(&app, "chainlist@test.com").await;
+
+    // Create a settlement so a non-genesis block exists.
+    send(
+        app.clone(),
+        Method::POST,
+        "/api/settlements",
+        Some(json!({ "gross_amount": 5000, "idempotency_key": "cl-001" })),
+        Some(&token),
+    )
+    .await;
+
+    let (status, body) = send(app, Method::GET, "/api/chain/blocks", None, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let blocks = body.as_array().unwrap();
+    assert!(blocks.len() >= 2, "expected genesis block + at least 1 settlement block");
+
+    // Most recent block first — it's the settlement block.
+    let settlement_block = &blocks[0];
+    assert!(settlement_block["id"].as_i64().unwrap() > 1);
+    assert_eq!(settlement_block["event_count"], 1);
+    assert!(settlement_block["hash"].as_str().unwrap().len() == 64); // 32 bytes hex
+    assert!(settlement_block["prev_hash"].as_str().unwrap().len() == 64);
+
+    // Genesis block is last in the list (lowest id).
+    let genesis = blocks.last().unwrap();
+    assert_eq!(genesis["id"], 1);
+    assert_eq!(
+        genesis["prev_hash"].as_str().unwrap(),
+        "0000000000000000000000000000000000000000000000000000000000000000"
+    );
+
+    Ok(())
+}
+
+/// GET /api/chain/blocks/:id returns block detail with events.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_chain_get_block(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, _) = signup_and_login(&app, "chainget@test.com").await;
+
+    send(
+        app.clone(),
+        Method::POST,
+        "/api/settlements",
+        Some(json!({ "gross_amount": 8000, "idempotency_key": "cg-001" })),
+        Some(&token),
+    )
+    .await;
+
+    // Find the block id for the settlement event from DB.
+    let block_id = sqlx::query_scalar!(
+        "SELECT block_id FROM chain_events WHERE event_type = 'settlement' ORDER BY id DESC LIMIT 1"
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    let (status, body) = send(
+        app,
+        Method::GET,
+        &format!("/api/chain/blocks/{block_id}"),
+        None,
+        Some(&token),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["id"], block_id);
+    assert!(body["hash"].as_str().unwrap().len() == 64);
+    assert!(body["prev_hash"].as_str().unwrap().len() == 64);
+
+    let events = body["events"].as_array().unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["event_type"], "settlement");
+    assert!(events[0]["payload"]["settlement_id"].is_string());
+    assert_eq!(events[0]["payload"]["gross_amount"], 8000);
+
+    Ok(())
+}
+
+/// GET /api/chain/blocks/:id returns 404 for a non-existent block.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_chain_block_not_found(pool: PgPool) {
+    let app = routes::app(make_state(pool));
+    let (token, _) = signup_and_login(&app, "chain404@test.com").await;
+
+    let (status, _) = send(
+        app,
+        Method::GET,
+        "/api/chain/blocks/999999",
+        None,
+        Some(&token),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
 /// Every new settlement must produce exactly one chain event of type 'settlement'.
 #[sqlx::test(migrations = "./migrations")]
 async fn test_settlement_produces_chain_event(pool: PgPool) -> sqlx::Result<()> {
