@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod byts;
 pub mod me;
 pub mod settlements;
 
@@ -19,6 +20,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/auth/signup", post(auth::signup))
         .route("/api/auth/login", post(auth::login))
         .route("/api/me", get(me::me))
+        .route("/api/byts/balance", get(byts::get_balance))
         .route("/api/bus/lock", get(bus_lock_get).post(bus_lock_post))
         .route(
             "/api/settlements",
