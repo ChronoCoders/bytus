@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE byts_locks SET status = 'released', unlocked_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3a5f45fe636788f6fbd9d285eeb3559da39c0484c8e843134dc7fe5db881841a"
+}

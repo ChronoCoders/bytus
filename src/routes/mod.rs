@@ -4,14 +4,11 @@ pub mod me;
 pub mod settlements;
 
 use axum::{
-    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
 use serde_json::json;
 
-use crate::auth::AuthUser;
-use crate::error::AppError;
 use crate::state::AppState;
 
 pub fn app(state: AppState) -> Router {
@@ -21,7 +18,11 @@ pub fn app(state: AppState) -> Router {
         .route("/api/auth/login", post(auth::login))
         .route("/api/me", get(me::me))
         .route("/api/byts/balance", get(byts::get_balance))
-        .route("/api/bus/lock", get(bus_lock_get).post(bus_lock_post))
+        .route(
+            "/api/byts/lock",
+            get(byts::list_locks).post(byts::lock_byts),
+        )
+        .route("/api/byts/unlock", post(byts::unlock_byts))
         .route(
             "/api/settlements",
             get(settlements::list_settlements).post(settlements::create_settlement),
@@ -31,12 +32,4 @@ pub fn app(state: AppState) -> Router {
 
 async fn health() -> Json<serde_json::Value> {
     Json(json!({ "status": "ok" }))
-}
-
-async fn bus_lock_get(_auth: AuthUser) -> Result<StatusCode, AppError> {
-    Ok(StatusCode::NOT_IMPLEMENTED)
-}
-
-async fn bus_lock_post(_auth: AuthUser) -> Result<StatusCode, AppError> {
-    Ok(StatusCode::NOT_IMPLEMENTED)
 }

@@ -9,6 +9,19 @@ use uuid::Uuid;
 use bytus::routes;
 use bytus::state::AppState;
 
+/// Seed BYTS balance for a user directly via DB. Used in BYTS tests.
+async fn seed_byts(pool: &PgPool, user_id: Uuid, amount: i64) {
+    sqlx::query!(
+        r#"INSERT INTO byts_balances (user_id, amount) VALUES ($1, $2)
+           ON CONFLICT (user_id) DO UPDATE SET amount = $2"#,
+        user_id,
+        amount,
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 fn make_state(pool: PgPool) -> AppState {
@@ -435,6 +448,250 @@ async fn test_settlement_balance_accuracy(pool: PgPool) -> sqlx::Result<()> {
     let (status, list) = send(app, Method::GET, "/api/settlements", None, Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(list.as_array().unwrap().len(), 10);
+
+    Ok(())
+}
+
+// ── BYTS lock / unlock ────────────────────────────────────────────────────────
+
+/// Lock happy path: balance deducted, lock active, chain event written.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_byts_lock_happy_path(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, user_id) = signup_and_login(&app, "lock@test.com").await;
+    seed_byts(&pool, user_id, 5000).await;
+
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        "/api/byts/lock",
+        Some(json!({ "amount": 1000 })),
+        Some(&token),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["lock_id"].is_string());
+    assert_eq!(body["amount"], 1000);
+    assert_eq!(body["status"], "active");
+
+    let lock_id = Uuid::parse_str(body["lock_id"].as_str().unwrap()).unwrap();
+
+    // Balance deducted.
+    let balance = sqlx::query_scalar!(
+        "SELECT amount FROM byts_balances WHERE user_id = $1",
+        user_id
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(balance, 4000);
+
+    // Lock record is active in DB.
+    let lock_status = sqlx::query_scalar!(
+        "SELECT status FROM byts_locks WHERE id = $1 AND user_id = $2",
+        lock_id,
+        user_id,
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(lock_status, "active");
+
+    // Chain event was written.
+    let event_count = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM chain_events WHERE event_type = 'lock'"
+    )
+    .fetch_one(&pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(event_count, 1);
+
+    // GET /api/byts/lock lists the lock.
+    let (status, list) = send(app.clone(), Method::GET, "/api/byts/lock", None, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let locks = list.as_array().unwrap();
+    assert_eq!(locks.len(), 1);
+    assert_eq!(locks[0]["lock_id"], body["lock_id"]);
+
+    // GET /api/byts/balance reflects the deduction.
+    let (status, bal) = send(app, Method::GET, "/api/byts/balance", None, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bal["amount"], 4000);
+
+    Ok(())
+}
+
+/// Unlock: balance restored, lock released, chain event written.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_byts_unlock(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, user_id) = signup_and_login(&app, "unlock@test.com").await;
+    seed_byts(&pool, user_id, 5000).await;
+
+    // Lock first.
+    let (_, lock_body) = send(
+        app.clone(),
+        Method::POST,
+        "/api/byts/lock",
+        Some(json!({ "amount": 2000 })),
+        Some(&token),
+    )
+    .await;
+    let lock_id = lock_body["lock_id"].as_str().unwrap().to_string();
+
+    // Unlock.
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        "/api/byts/unlock",
+        Some(json!({ "lock_id": lock_id })),
+        Some(&token),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["lock_id"], lock_id);
+    assert_eq!(body["status"], "released");
+
+    // Balance fully restored.
+    let balance = sqlx::query_scalar!(
+        "SELECT amount FROM byts_balances WHERE user_id = $1",
+        user_id
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(balance, 5000);
+
+    // Lock is released in DB.
+    let lock_status = sqlx::query_scalar!(
+        "SELECT status FROM byts_locks WHERE id = $1",
+        Uuid::parse_str(&lock_id).unwrap(),
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(lock_status, "released");
+
+    // Unlock chain event was written.
+    let event_count = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM chain_events WHERE event_type = 'unlock'"
+    )
+    .fetch_one(&pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(event_count, 1);
+
+    // Cannot unlock the same lock again — 422.
+    let (status, _) = send(
+        app,
+        Method::POST,
+        "/api/byts/unlock",
+        Some(json!({ "lock_id": lock_id })),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    Ok(())
+}
+
+/// Insufficient balance returns 422 with no partial state.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_byts_lock_insufficient_balance(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, user_id) = signup_and_login(&app, "insuf@test.com").await;
+    seed_byts(&pool, user_id, 100).await;
+
+    let (status, body) = send(
+        app,
+        Method::POST,
+        "/api/byts/lock",
+        Some(json!({ "amount": 1000 })),
+        Some(&token),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body["error"].as_str().unwrap().contains("insufficient"));
+
+    // No lock record created.
+    let lock_count = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM byts_locks WHERE user_id = $1",
+        user_id
+    )
+    .fetch_one(&pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(lock_count, 0);
+
+    // Balance unchanged.
+    let balance = sqlx::query_scalar!(
+        "SELECT amount FROM byts_balances WHERE user_id = $1",
+        user_id
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(balance, 100);
+
+    Ok(())
+}
+
+/// Double-lock: two sequential locks succeed while balance allows, third fails.
+#[sqlx::test(migrations = "./migrations")]
+async fn test_byts_double_lock(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, user_id) = signup_and_login(&app, "double@test.com").await;
+    seed_byts(&pool, user_id, 2000).await;
+
+    // First lock: 1000 — succeeds (balance: 1000).
+    let (s1, _) = send(
+        app.clone(),
+        Method::POST,
+        "/api/byts/lock",
+        Some(json!({ "amount": 1000 })),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(s1, StatusCode::OK);
+
+    // Second lock: 1000 — succeeds (balance: 0).
+    let (s2, _) = send(
+        app.clone(),
+        Method::POST,
+        "/api/byts/lock",
+        Some(json!({ "amount": 1000 })),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(s2, StatusCode::OK);
+
+    // Third lock: 1 — fails, balance exhausted.
+    let (s3, _) = send(
+        app.clone(),
+        Method::POST,
+        "/api/byts/lock",
+        Some(json!({ "amount": 1 })),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(s3, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Two active locks in DB.
+    let lock_count = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM byts_locks WHERE user_id = $1 AND status = 'active'",
+        user_id
+    )
+    .fetch_one(&pool)
+    .await?
+    .unwrap_or(0);
+    assert_eq!(lock_count, 2);
+
+    // Balance is exactly 0.
+    let balance = sqlx::query_scalar!(
+        "SELECT amount FROM byts_balances WHERE user_id = $1",
+        user_id
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(balance, 0);
 
     Ok(())
 }

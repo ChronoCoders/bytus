@@ -2,6 +2,16 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 #[derive(sqlx::FromRow)]
+pub struct BytsLock {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub amount: i64,
+    pub locked_at: DateTime<Utc>,
+    pub unlocked_at: Option<DateTime<Utc>>,
+    pub status: String,
+}
+
+#[derive(sqlx::FromRow)]
 pub struct User {
     pub id: Uuid,
     pub email: String,

@@ -5,10 +5,15 @@ use axum::{
 };
 use serde_json::json;
 
+use crate::chain::ChainError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
+
+    #[error("chain error: {0}")]
+    Chain(#[from] ChainError),
 
     #[error("unauthorized")]
     Unauthorized,
@@ -18,6 +23,9 @@ pub enum AppError {
 
     #[error("conflict: {0}")]
     Conflict(String),
+
+    #[error("unprocessable entity: {0}")]
+    UnprocessableEntity(String),
 
     #[error("internal server error")]
     Internal,
@@ -30,9 +38,16 @@ impl IntoResponse for AppError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal server error".to_string(),
             ),
+            AppError::Chain(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal server error".to_string(),
+            ),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
+            AppError::UnprocessableEntity(msg) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, msg.clone())
+            }
             AppError::Internal => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal server error".to_string(),
