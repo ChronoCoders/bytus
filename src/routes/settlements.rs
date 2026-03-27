@@ -27,6 +27,7 @@ pub struct SettlementResponse {
     pub gross_amount: i64,
     pub fee_amount: i64,
     pub net_amount: i64,
+    pub byts_fee: i64,
     pub currency: String,
     pub status: String,
     pub idempotency_key: String,
@@ -41,6 +42,7 @@ impl From<Settlement> for SettlementResponse {
             gross_amount: s.gross_amount,
             fee_amount: s.fee_amount,
             net_amount: s.net_amount,
+            byts_fee: s.byts_fee,
             currency: s.currency,
             status: s.status,
             idempotency_key: s.idempotency_key,
@@ -78,7 +80,7 @@ pub async fn create_settlement(
         r#"INSERT INTO settlements (user_id, gross_amount, fee_amount, net_amount, currency, idempotency_key)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (idempotency_key) DO NOTHING
-           RETURNING id, user_id, gross_amount, fee_amount, net_amount, currency, status, idempotency_key, created_at"#,
+           RETURNING id, user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, status, idempotency_key, created_at"#,
         auth.user_id,
         gross,
         fee,
@@ -97,7 +99,7 @@ pub async fn create_settlement(
             tx.rollback().await.map_err(AppError::Database)?;
             let existing = sqlx::query_as!(
                 Settlement,
-                r#"SELECT id, user_id, gross_amount, fee_amount, net_amount, currency, status, idempotency_key, created_at
+                r#"SELECT id, user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, status, idempotency_key, created_at
                    FROM settlements
                    WHERE idempotency_key = $1 AND user_id = $2"#,
                 body.idempotency_key,
@@ -176,7 +178,7 @@ pub async fn list_settlements(
 ) -> Result<Json<Vec<SettlementResponse>>, AppError> {
     let rows = sqlx::query_as!(
         Settlement,
-        r#"SELECT id, user_id, gross_amount, fee_amount, net_amount, currency, status, idempotency_key, created_at
+        r#"SELECT id, user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, status, idempotency_key, created_at
            FROM settlements
            WHERE user_id = $1
            ORDER BY created_at DESC"#,

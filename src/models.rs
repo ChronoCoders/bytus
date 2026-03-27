@@ -17,6 +17,7 @@ pub struct Settlement {
     pub gross_amount: i64,
     pub fee_amount: i64,
     pub net_amount: i64,
+    pub byts_fee: i64,
     pub currency: String,
     pub status: String,
     pub idempotency_key: String,

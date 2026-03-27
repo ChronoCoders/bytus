@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO settlements (user_id, gross_amount, fee_amount, net_amount, currency, idempotency_key)\n           VALUES ($1, $2, $3, $4, $5, $6)\n           ON CONFLICT (idempotency_key) DO NOTHING\n           RETURNING id, user_id, gross_amount, fee_amount, net_amount, currency, status, idempotency_key, created_at",
+  "query": "INSERT INTO settlements (user_id, gross_amount, fee_amount, net_amount, currency, idempotency_key)\n           VALUES ($1, $2, $3, $4, $5, $6)\n           ON CONFLICT (idempotency_key) DO NOTHING\n           RETURNING id, user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, status, idempotency_key, created_at",
   "describe": {
     "columns": [
       {
@@ -30,21 +30,26 @@
       },
       {
         "ordinal": 5,
+        "name": "byts_fee",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
         "name": "currency",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "status",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "idempotency_key",
         "type_info": "Text"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -68,8 +73,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "3fba4f297275506b510d64f01589370d32d8c23d6679b475a6467767748d31a1"
+  "hash": "edbbe48cb39a978dbbc91eee73e2ab58969539866ef478b7cc4ee6f1999816fe"
 }
