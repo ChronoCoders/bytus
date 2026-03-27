@@ -5,6 +5,7 @@ pub struct Config {
     pub database_url: String,
     pub jwt_secret: String,
     pub fee_bps: u32,
+    pub byts_rate: u32,
 }
 
 impl Config {
@@ -16,11 +17,17 @@ impl Config {
         let fee_bps = fee_bps_str
             .parse::<u32>()
             .map_err(|_| ConfigError::ParseU32("FEE_BPS"))?;
+        let byts_rate_str =
+            env::var("BYTS_RATE").map_err(|_| ConfigError::Missing("BYTS_RATE"))?;
+        let byts_rate = byts_rate_str
+            .parse::<u32>()
+            .map_err(|_| ConfigError::ParseU32("BYTS_RATE"))?;
 
         Ok(Config {
             database_url,
             jwt_secret,
             fee_bps,
+            byts_rate,
         })
     }
 }

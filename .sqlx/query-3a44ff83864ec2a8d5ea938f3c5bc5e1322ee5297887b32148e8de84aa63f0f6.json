@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO settlements (user_id, gross_amount, fee_amount, net_amount, currency, idempotency_key)\n           VALUES ($1, $2, $3, $4, $5, $6)\n           ON CONFLICT (idempotency_key) DO NOTHING\n           RETURNING id, user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, status, idempotency_key, created_at",
+  "query": "INSERT INTO settlements (user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, idempotency_key)\n           VALUES ($1, $2, $3, $4, $5, $6, $7)\n           ON CONFLICT (idempotency_key) DO NOTHING\n           RETURNING id, user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, status, idempotency_key, created_at",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,7 @@
         "Int8",
         "Int8",
         "Int8",
+        "Int8",
         "Text",
         "Text"
       ]
@@ -77,5 +78,5 @@
       false
     ]
   },
-  "hash": "edbbe48cb39a978dbbc91eee73e2ab58969539866ef478b7cc4ee6f1999816fe"
+  "hash": "3a44ff83864ec2a8d5ea938f3c5bc5e1322ee5297887b32148e8de84aa63f0f6"
 }

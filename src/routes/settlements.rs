@@ -73,19 +73,23 @@ pub async fn create_settlement(
         ));
     }
 
+    // BYTS fee: fiat_fee * byts_rate / 1_000_000 (integer division, rate in micro-units).
+    let byts_fee: i64 = fee * i64::from(state.byts_rate) / 1_000_000;
+
     let mut tx = state.pool.begin().await.map_err(AppError::Database)?;
 
     // Step 1: INSERT settlement — ON CONFLICT DO NOTHING returns None on duplicate key.
     let settlement_opt = sqlx::query_as!(
         Settlement,
-        r#"INSERT INTO settlements (user_id, gross_amount, fee_amount, net_amount, currency, idempotency_key)
-           VALUES ($1, $2, $3, $4, $5, $6)
+        r#"INSERT INTO settlements (user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, idempotency_key)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (idempotency_key) DO NOTHING
            RETURNING id, user_id, gross_amount, fee_amount, net_amount, byts_fee, currency, status, idempotency_key, created_at"#,
         auth.user_id,
         gross,
         fee,
         net,
+        byts_fee,
         body.currency,
         body.idempotency_key,
     )

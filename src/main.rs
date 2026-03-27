@@ -20,7 +20,7 @@ async fn main() {
         std::process::exit(1);
     });
 
-    tracing::info!(fee_bps = cfg.fee_bps, "configuration loaded");
+    tracing::info!(fee_bps = cfg.fee_bps, byts_rate = cfg.byts_rate, "configuration loaded");
 
     let pool = db::connect(&cfg.database_url).await.unwrap_or_else(|e| {
         eprintln!("database connection error: {e}");
@@ -31,6 +31,7 @@ async fn main() {
         pool,
         jwt_secret: cfg.jwt_secret,
         fee_bps: cfg.fee_bps,
+        byts_rate: cfg.byts_rate,
     });
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")

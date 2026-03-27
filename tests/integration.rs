@@ -29,6 +29,9 @@ fn make_state(pool: PgPool) -> AppState {
         pool,
         jwt_secret: "test_jwt_secret_must_be_32_chars!!".to_string(),
         fee_bps: 50,
+        // 2 BYTS per fiat fee unit (in micro-units). Chosen to differ from
+        // fiat_fee so accidental equality cannot mask a computation bug.
+        byts_rate: 2_000_000,
     }
 }
 
@@ -453,6 +456,65 @@ async fn test_settlement_balance_accuracy(pool: PgPool) -> sqlx::Result<()> {
 }
 
 // ── settlement chain events ───────────────────────────────────────────────────
+
+// ── BYTS fee ──────────────────────────────────────────────────────────────────
+
+/// Settlement response includes byts_fee matching the formula:
+/// byts_fee = fiat_fee * byts_rate / 1_000_000
+#[sqlx::test(migrations = "./migrations")]
+async fn test_settlement_byts_fee(pool: PgPool) -> sqlx::Result<()> {
+    let app = routes::app(make_state(pool.clone()));
+    let (token, user_id) = signup_and_login(&app, "bytsfee@test.com").await;
+
+    // fee_bps = 50, byts_rate = 2_000_000 (from make_state)
+    // gross = 10_000 → fiat_fee = 10_000 * 50 / 10_000 = 50
+    // byts_fee = 50 * 2_000_000 / 1_000_000 = 100
+    let (status, body) = send(
+        app.clone(),
+        Method::POST,
+        "/api/settlements",
+        Some(json!({
+            "gross_amount": 10000,
+            "currency": "USD",
+            "idempotency_key": "byts-fee-001"
+        })),
+        Some(&token),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["fee_amount"], 50);
+    assert_eq!(body["net_amount"], 9950);
+    assert_eq!(body["byts_fee"], 100, "byts_fee must equal fiat_fee * byts_rate / 1_000_000");
+
+    // Verify byts_fee is persisted in DB.
+    let settlement_id = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
+    let db_byts_fee = sqlx::query_scalar!(
+        "SELECT byts_fee FROM settlements WHERE id = $1 AND user_id = $2",
+        settlement_id,
+        user_id,
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(db_byts_fee, 100);
+
+    // Idempotent replay returns the same byts_fee.
+    let (_, body2) = send(
+        app,
+        Method::POST,
+        "/api/settlements",
+        Some(json!({
+            "gross_amount": 10000,
+            "currency": "USD",
+            "idempotency_key": "byts-fee-001"
+        })),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(body2["byts_fee"], 100, "idempotent replay must return same byts_fee");
+
+    Ok(())
+}
 
 // ── chain API ─────────────────────────────────────────────────────────────────
 
