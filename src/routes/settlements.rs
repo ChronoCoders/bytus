@@ -55,7 +55,9 @@ pub async fn create_settlement(
     Json(body): Json<CreateSettlementRequest>,
 ) -> Result<Json<SettlementResponse>, AppError> {
     if body.gross_amount <= 0 {
-        return Err(AppError::BadRequest("gross_amount must be positive".to_string()));
+        return Err(AppError::BadRequest(
+            "gross_amount must be positive".to_string(),
+        ));
     }
 
     let gross: i64 = body.gross_amount;
@@ -63,7 +65,9 @@ pub async fn create_settlement(
     let net: i64 = gross - fee;
 
     if net <= 0 {
-        return Err(AppError::BadRequest("net amount must be positive".to_string()));
+        return Err(AppError::BadRequest(
+            "net amount must be positive".to_string(),
+        ));
     }
 
     let mut tx = state.pool.begin().await.map_err(AppError::Database)?;
@@ -182,5 +186,7 @@ pub async fn list_settlements(
     .await
     .map_err(AppError::Database)?;
 
-    Ok(Json(rows.into_iter().map(SettlementResponse::from).collect()))
+    Ok(Json(
+        rows.into_iter().map(SettlementResponse::from).collect(),
+    ))
 }

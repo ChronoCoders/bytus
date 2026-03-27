@@ -9,7 +9,9 @@ async fn main() {
     dotenvy::dotenv().ok();
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
@@ -38,7 +40,12 @@ async fn main() {
             std::process::exit(1);
         });
 
-    tracing::info!("listening on {}", listener.local_addr().unwrap_or_else(|_| "unknown".parse().unwrap()));
+    tracing::info!(
+        "listening on {}",
+        listener
+            .local_addr()
+            .unwrap_or_else(|_| "unknown".parse().unwrap())
+    );
 
     axum::serve(listener, app).await.unwrap_or_else(|e| {
         eprintln!("server error: {e}");

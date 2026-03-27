@@ -24,7 +24,9 @@ pub async fn signup(
     Json(body): Json<AuthRequest>,
 ) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
     if body.email.is_empty() || body.password.is_empty() {
-        return Err(AppError::BadRequest("email and password are required".to_string()));
+        return Err(AppError::BadRequest(
+            "email and password are required".to_string(),
+        ));
     }
 
     let password_hash = hash_password(&body.password)?;
@@ -65,5 +67,8 @@ pub async fn login(
     verify_password(&body.password, &user.password_hash)?;
 
     let token = encode_token(user.id, &state.jwt_secret)?;
-    Ok(Json(AuthResponse { user_id: user.id, token }))
+    Ok(Json(AuthResponse {
+        user_id: user.id,
+        token,
+    }))
 }

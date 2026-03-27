@@ -26,11 +26,17 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            AppError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal server error".to_string()),
+            AppError::Database(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal server error".to_string(),
+            ),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
-            AppError::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal server error".to_string()),
+            AppError::Internal => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal server error".to_string(),
+            ),
         };
 
         tracing::error!(error = %self, "request error");

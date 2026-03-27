@@ -9,7 +9,8 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let database_url = env::var("DATABASE_URL").map_err(|_| ConfigError::Missing("DATABASE_URL"))?;
+        let database_url =
+            env::var("DATABASE_URL").map_err(|_| ConfigError::Missing("DATABASE_URL"))?;
         let jwt_secret = env::var("JWT_SECRET").map_err(|_| ConfigError::Missing("JWT_SECRET"))?;
         let fee_bps_str = env::var("FEE_BPS").map_err(|_| ConfigError::Missing("FEE_BPS"))?;
         let fee_bps = fee_bps_str

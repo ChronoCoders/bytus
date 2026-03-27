@@ -1,8 +1,8 @@
-use async_trait::async_trait;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use async_trait::async_trait;
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::request::Parts;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
@@ -78,8 +78,8 @@ where
         )
         .map_err(|_| AppError::Unauthorized)?;
 
-        let user_id = Uuid::parse_str(&token_data.claims.sub)
-            .map_err(|_| AppError::Unauthorized)?;
+        let user_id =
+            Uuid::parse_str(&token_data.claims.sub).map_err(|_| AppError::Unauthorized)?;
 
         Ok(AuthUser { user_id })
     }

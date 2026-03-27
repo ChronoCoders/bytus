@@ -41,10 +41,7 @@ async fn send(
         None => Body::from(""),
     };
 
-    let resp = app
-        .oneshot(builder.body(req_body).unwrap())
-        .await
-        .unwrap();
+    let resp = app.oneshot(builder.body(req_body).unwrap()).await.unwrap();
 
     let status = resp.status();
     let bytes = resp.into_body().collect().await.unwrap().to_bytes();
@@ -217,7 +214,7 @@ async fn test_settlement_happy_path(pool: PgPool) -> sqlx::Result<()> {
     // Response
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["gross_amount"], 10000);
-    assert_eq!(body["fee_amount"], 50);   // 10000 * 50 / 10000
+    assert_eq!(body["fee_amount"], 50); // 10000 * 50 / 10000
     assert_eq!(body["net_amount"], 9950);
     assert_eq!(body["status"], "completed");
     assert_eq!(body["currency"], "USD");
@@ -287,8 +284,22 @@ async fn test_settlement_idempotency(pool: PgPool) -> sqlx::Result<()> {
         "idempotency_key": "idem-001"
     });
 
-    let (s1, b1) = send(app.clone(), Method::POST, "/api/settlements", Some(payload.clone()), Some(&token)).await;
-    let (s2, b2) = send(app.clone(), Method::POST, "/api/settlements", Some(payload), Some(&token)).await;
+    let (s1, b1) = send(
+        app.clone(),
+        Method::POST,
+        "/api/settlements",
+        Some(payload.clone()),
+        Some(&token),
+    )
+    .await;
+    let (s2, b2) = send(
+        app.clone(),
+        Method::POST,
+        "/api/settlements",
+        Some(payload),
+        Some(&token),
+    )
+    .await;
 
     // Both succeed with the same settlement ID.
     assert_eq!(s1, StatusCode::OK);
@@ -341,8 +352,20 @@ async fn test_settlement_concurrent_idempotency(pool: PgPool) -> sqlx::Result<()
     });
 
     let (r1, r2) = tokio::join!(
-        send(app.clone(), Method::POST, "/api/settlements", Some(payload.clone()), Some(&token)),
-        send(app.clone(), Method::POST, "/api/settlements", Some(payload), Some(&token)),
+        send(
+            app.clone(),
+            Method::POST,
+            "/api/settlements",
+            Some(payload.clone()),
+            Some(&token)
+        ),
+        send(
+            app.clone(),
+            Method::POST,
+            "/api/settlements",
+            Some(payload),
+            Some(&token)
+        ),
     );
 
     assert_eq!(r1.0, StatusCode::OK);
@@ -360,12 +383,10 @@ async fn test_settlement_concurrent_idempotency(pool: PgPool) -> sqlx::Result<()
     .unwrap_or(0);
     assert_eq!(settlement_count, 1);
 
-    let marker_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM apply_markers",
-    )
-    .fetch_one(&pool)
-    .await?
-    .unwrap_or(0);
+    let marker_count = sqlx::query_scalar!("SELECT COUNT(*) FROM apply_markers",)
+        .fetch_one(&pool)
+        .await?
+        .unwrap_or(0);
     assert_eq!(marker_count, 1);
 
     Ok(())
