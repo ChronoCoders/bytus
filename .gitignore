@@ -1,0 +1,16 @@
+# Environment
+.env
+
+# Rust build output
+target/
+
+# Claude Code internals
+.claude/
+CLAUDE.md
+
+# Dev session notes
+sessions/
+
+# OS noise
+.DS_Store
+Thumbs.db

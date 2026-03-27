@@ -1,0 +1,75 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO settlements (user_id, gross_amount, fee_amount, net_amount, currency, idempotency_key)\n           VALUES ($1, $2, $3, $4, $5, $6)\n           ON CONFLICT (idempotency_key) DO NOTHING\n           RETURNING id, user_id, gross_amount, fee_amount, net_amount, currency, status, idempotency_key, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "gross_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "fee_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "net_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "idempotency_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3fba4f297275506b510d64f01589370d32d8c23d6679b475a6467767748d31a1"
+}

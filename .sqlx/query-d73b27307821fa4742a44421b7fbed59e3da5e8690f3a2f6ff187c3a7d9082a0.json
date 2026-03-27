@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO apply_markers (settlement_id)\n         VALUES ($1)\n         ON CONFLICT (settlement_id) DO NOTHING\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d73b27307821fa4742a44421b7fbed59e3da5e8690f3a2f6ff187c3a7d9082a0"
+}

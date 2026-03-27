@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS apply_markers;
+DROP TABLE IF EXISTS balances;
+DROP TABLE IF EXISTS ledger_entries;
+DROP TABLE IF EXISTS settlements;
+DROP TABLE IF EXISTS bus_locks;
+DROP TABLE IF EXISTS users;

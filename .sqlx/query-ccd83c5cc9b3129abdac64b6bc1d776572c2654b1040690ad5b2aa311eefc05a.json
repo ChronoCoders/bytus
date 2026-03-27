@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, user_id, gross_amount, fee_amount, net_amount, currency, status, idempotency_key, created_at\n                   FROM settlements\n                   WHERE idempotency_key = $1 AND user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "gross_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "fee_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "net_amount",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "currency",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "idempotency_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ccd83c5cc9b3129abdac64b6bc1d776572c2654b1040690ad5b2aa311eefc05a"
+}
